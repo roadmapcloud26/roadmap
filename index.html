@@ -1097,6 +1097,10 @@ async function initCloud(){
       state=migrate(incoming); saveLocal(); renderAll();
     },err=>{ setCloudStatus('error'); });
     setCloudStatus('cloud');
+    if(!cloud._flushTimer){
+      cloud._flushTimer=setInterval(flushPending,1000);
+      document.addEventListener('focusout',()=>setTimeout(flushPending,60));
+    }
   }catch(e){ console.warn(e); setCloudStatus('error'); }
 }
 function cloudSave(seed){
@@ -1106,7 +1110,12 @@ function cloudSave(seed){
     cloud.fs.setDoc(cloud.docRef,{json:JSON.stringify(state),clientId:cloud.clientId,updatedAt:Date.now()}).catch(()=>setCloudStatus('error'));
   },seed?0:500);
 }
-function flushPending(){ if(pendingRemote && !isDragging){ state=migrate(pendingRemote); pendingRemote=null; saveLocal(); renderAll(); } }
+function flushPending(){
+  if(!pendingRemote || isDragging) return;
+  const ae=document.activeElement;
+  if(ae && ['INPUT','SELECT','TEXTAREA'].includes(ae.tagName)) return;
+  state=migrate(pendingRemote); pendingRemote=null; saveLocal(); renderAll();
+}
 function setCloudStatus(s){
   const map={local:['','Local (este navegador)'],connecting:['','Conectando…'],cloud:['on','En la nube · tiempo real'],error:['err','Error de conexión']};
   const [cls,txt]=map[s]||map.local;
