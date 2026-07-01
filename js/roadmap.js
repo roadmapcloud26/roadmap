@@ -1088,6 +1088,19 @@ function bindGlobal(){
   const body=document.getElementById('tlBody');
   body.addEventListener('scroll',()=>{ syncTransforms(); });
 
+  // La barra lateral izquierda tiene overflow:hidden y no scrollea sola.
+  // Reenviamos la rueda del mouse al timeline para que el scroll vertical
+  // funcione también cuando el cursor está sobre los nombres de proyectos.
+  const sidebar=document.querySelector('.sidebar');
+  if(sidebar){
+    sidebar.addEventListener('wheel',e=>{
+      if(e.deltaY===0) return;
+      body.scrollTop+=e.deltaY;
+      syncTransforms();
+      e.preventDefault();
+    },{passive:false});
+  }
+
   document.addEventListener('keydown',e=>{
     if(e.key==='Escape'){ exitPresent(); closeUnlockModal(); closeSettings(); if(document.getElementById('barPanel').classList.contains('open'))closeBarPanel(); }
   });

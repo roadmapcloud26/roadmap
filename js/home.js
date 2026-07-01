@@ -231,6 +231,7 @@ async function createRoadmap(){
     const passwordHash=await hashPassword(pass);
     const st = defaultState();
     st.config.title = name;
+    st.projects = []; // Roadmap nuevo empieza vacío (sin proyectos de ejemplo).
     const { db, fs } = HFB || await getFB();
     await fs.setDoc(fs.doc(db, ROADMAPS_COL, id), {
       name,
