@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Prueba de integración · acceso</title>
+</head>
+<body>
+<pre id="result">Ejecutando…</pre>
+<iframe id="app" title="Aplicación bajo prueba" style="width:1280px;height:800px"></iframe>
+
+<script src="../js/core.js"></script>
+<script>
+(async function(){
+  const result=document.getElementById('result');
+  const frame=document.getElementById('app');
+  const testName='Prueba acceso Codex '+Date.now();
+  const firstPass='clave inicial';
+  const secondPass='clave nueva';
+  let createdId='';
+  let legacyId='';
+
+  function assert(value,message){ if(!value) throw new Error(message); }
+  function load(path){
+    return new Promise(resolve=>{
+      frame.addEventListener('load',resolve,{once:true});
+      frame.src=path;
+    });
+  }
+  function nextLoad(){ return new Promise(resolve=>frame.addEventListener('load',resolve,{once:true})); }
+  async function waitFor(check,message){
+    const limit=Date.now()+2000;
+    while(Date.now()<limit){
+      if(check()) return;
+      await new Promise(resolve=>setTimeout(resolve,25));
+    }
+    throw new Error(message);
+  }
+
+  try{
+    revokeMasterAccess();
+    assert(STORAGE_MODE==='local','La prueba requiere STORAGE_MODE local');
+
+    // Crear exige clave y confirma que nunca se almacena en texto plano.
+    await load('../index.html');
+    let doc=frame.contentDocument;
+    doc.querySelector('#newCard').click();
+    doc.querySelector('#nrName').value=testName;
+    doc.querySelector('#nrCreate').click();
+    assert(doc.querySelector('#nrErr').textContent.includes('clave'),'Crear permitió omitir la clave');
+    doc.querySelector('#nrPass').value=firstPass;
+    doc.querySelector('#nrPass2').value='distinta';
+    doc.querySelector('#nrCreate').click();
+    assert(doc.querySelector('#nrErr').textContent.includes('no coinciden'),'Crear permitió claves distintas');
+    doc.querySelector('#nrPass2').value=firstPass;
+    const created=nextLoad();
+    doc.querySelector('#nrCreate').click();
+    await created;
+
+    const meta=readLocalMeta();
+    createdId=Object.keys(meta).find(id=>meta[id].name===testName)||'';
+    assert(createdId,'No se encontró el roadmap creado');
+    assert(meta[createdId].passwordHash && meta[createdId].passwordHash!==firstPass,'La clave no quedó protegida con hash');
+    doc=frame.contentDocument;
+    assert(doc.body.classList.contains('edit-mode'),'El creador no recibió acceso de edición');
+
+    // Un enlace directo sin sesión entra en modo de solo lectura.
+    revokeRoadmapEdit(createdId);
+    revokeMasterAccess();
+    await load('../roadmap.html?id='+encodeURIComponent(createdId));
+    doc=frame.contentDocument;
+    assert(!doc.body.classList.contains('edit-mode'),'El enlace directo abrió edición sin clave');
+    assert(doc.querySelector('#editBtn').textContent.includes('Desbloquear'),'No se ofrece desbloquear desde modo lectura');
+
+    // Clave incorrecta falla; clave correcta habilita edición.
+    doc.querySelector('#editBtn').click();
+    doc.querySelector('#unlockPass').value='incorrecta';
+    doc.querySelector('#unlockSubmit').click();
+    await waitFor(()=>doc.querySelector('#unlockErr').textContent.includes('incorrecta'),'No se rechazó una clave incorrecta');
+    doc.querySelector('#unlockPass').value=firstPass;
+    doc.querySelector('#unlockSubmit').click();
+    await waitFor(()=>doc.body.classList.contains('edit-mode'),'La clave correcta no habilitó edición');
+
+    // Incluso autorizado, ?view=1 fuerza la vista para compartir/presentar.
+    await load('../roadmap.html?id='+encodeURIComponent(createdId)+'&view=1');
+    doc=frame.contentDocument;
+    assert(!doc.body.classList.contains('edit-mode'),'view=1 no forzó el modo lectura');
+    assert(doc.querySelector('#editBtn').textContent.includes('modo vista'),'No se indicó el modo vista autorizado');
+    let sharedUrl='';
+    Object.defineProperty(frame.contentWindow.navigator,'clipboard',{
+      configurable:true,
+      value:{writeText:async value=>{sharedUrl=value;}}
+    });
+    doc.querySelector('#shareBtn').click();
+    await waitFor(()=>!!sharedUrl,'Compartir no generó un enlace');
+    assert(sharedUrl.includes('id='+encodeURIComponent(createdId))&&sharedUrl.includes('view=1'),'El enlace compartido no fuerza solo lectura');
+
+    // Cambiar la clave desde Configuración.
+    doc.querySelector('#editBtn').click();
+    doc.querySelector('#settingsBtn').click();
+    doc.querySelector('[data-tab="access"]').click();
+    doc.querySelector('#settingsPass').value=secondPass;
+    doc.querySelector('#settingsPass2').value=secondPass;
+    const oldHash=getLocalRoadmapMeta(createdId).passwordHash;
+    doc.querySelector('#settingsPassSave').click();
+    await waitFor(()=>getLocalRoadmapMeta(createdId).passwordHash!==oldHash,'No se guardó la nueva clave');
+
+    // La antigua deja de servir para una sesión nueva; la nueva sí sirve.
+    revokeRoadmapEdit(createdId);
+    revokeMasterAccess();
+    await load('../roadmap.html?id='+encodeURIComponent(createdId));
+    doc=frame.contentDocument;
+    doc.querySelector('#editBtn').click();
+    doc.querySelector('#unlockPass').value=firstPass;
+    doc.querySelector('#unlockSubmit').click();
+    await waitFor(()=>doc.querySelector('#unlockErr').textContent.includes('incorrecta'),'La clave anterior siguió funcionando');
+    doc.querySelector('#unlockPass').value=secondPass;
+    doc.querySelector('#unlockSubmit').click();
+    await waitFor(()=>doc.body.classList.contains('edit-mode'),'La clave nueva no habilitó edición');
+
+    // La clave madre desbloquea directamente desde el Home.
+    revokeRoadmapEdit(createdId);
+    revokeMasterAccess();
+    await load('../index.html');
+    doc=frame.contentDocument;
+    doc.querySelector('#masterPass').value=MASTER_PASS;
+    doc.querySelector('#masterUnlock').click();
+    assert(doc.querySelector('#masterBox').classList.contains('unlocked'),'La clave madre no activó el acceso total');
+    const masterOpen=nextLoad();
+    doc.querySelector('[data-edit="'+createdId+'"]').click();
+    await masterOpen;
+    assert(frame.contentDocument.body.classList.contains('edit-mode'),'La clave madre no abrió el roadmap en edición');
+
+    // El dueño también puede eliminar usando la clave específica.
+    revokeRoadmapEdit(createdId);
+    revokeMasterAccess();
+    await load('../index.html');
+    doc=frame.contentDocument;
+    doc.defaultView.confirm=()=>true;
+    doc.querySelector('[data-del="'+createdId+'"]').click();
+    assert(doc.querySelector('#accessModal').classList.contains('open'),'Eliminar no solicitó autorización');
+    doc.querySelector('#accessPass').value=secondPass;
+    doc.querySelector('#accessSubmit').click();
+    await waitFor(()=>!localStorage.getItem(localDocKey(createdId)),'La eliminación autorizada no borró el roadmap');
+    createdId='';
+
+    // Un roadmap anterior sin clave puede recibir una usando la clave madre.
+    legacyId=randomId();
+    const legacyState=defaultState();
+    legacyState.config.title='Roadmap antiguo de prueba';
+    saveLocalRoadmapDoc(legacyId,legacyState,'access-test');
+    grantMasterAccess();
+    await load('../roadmap.html?id='+encodeURIComponent(legacyId));
+    doc=frame.contentDocument;
+    assert(doc.body.classList.contains('edit-mode'),'La clave madre no abrió el roadmap antiguo');
+    doc.querySelector('#settingsBtn').click();
+    doc.querySelector('[data-tab="access"]').click();
+    assert(doc.querySelector('#accessState').classList.contains('legacy'),'No se identificó el roadmap antiguo sin clave');
+    doc.querySelector('#settingsPass').value='clave para antiguo';
+    doc.querySelector('#settingsPass2').value='clave para antiguo';
+    doc.querySelector('#settingsPassSave').click();
+    await waitFor(()=>!!getLocalRoadmapMeta(legacyId).passwordHash,'No se pudo asignar clave al roadmap antiguo');
+    deleteLocalRoadmapDoc(legacyId,'access-test');
+    legacyId='';
+
+    result.textContent='PASS: clave propia, solo lectura, cambio de clave, clave madre, legado y borrado autorizado';
+  }catch(error){
+    result.textContent='FAIL: '+error.stack;
+    document.body.dataset.failed='1';
+  }finally{
+    revokeMasterAccess();
+    if(createdId){
+      revokeRoadmapEdit(createdId);
+      deleteLocalRoadmapDoc(createdId,'access-test');
+    }
+    if(legacyId) deleteLocalRoadmapDoc(legacyId,'access-test');
+  }
+})();
+</script>
+</body>
+</html>

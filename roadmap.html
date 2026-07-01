@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Roadmap</title>
+<link rel="stylesheet" href="css/app.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+</head>
+<body>
+
+<!-- ===== TOPBAR ===== -->
+<div class="topbar">
+  <a class="home-link" href="index.html" title="Volver a todos los roadmaps">← Roadmaps</a>
+  <div class="brand">
+    <img class="logo-img" id="logoImg" alt="logo">
+    <h1 id="brTitle" contenteditable="false">Roadmap Interactivo</h1>
+    <p id="brSub" contenteditable="false">Plan estratégico 2026–2028</p>
+  </div>
+  <div class="seg" id="viewSwitcher">
+    <button data-view="year">Año</button>
+    <button data-view="cuatri">C</button>
+    <button data-view="month" class="active">Mes</button>
+    <button data-view="week">Semana</button>
+  </div>
+  <div class="zoom-group">
+    <button class="icon-btn" id="zoomOut" title="Alejar">−</button>
+    <button class="icon-btn" id="zoomIn" title="Acercar">+</button>
+    <button class="icon-btn" id="todayBtn" title="Ir a hoy">Hoy</button>
+  </div>
+  <div class="spacer"></div>
+  <span class="cloud-dot" id="cloudDot" title="Estado de la nube"></span>
+  <button class="icon-btn" id="shareBtn" title="Copiar enlace de solo lectura">🔗 Compartir</button>
+  <button class="pill-btn" id="editBtn" title="Activar/desactivar edición">🔒 Desbloquear edición</button>
+  <div class="menu" id="fileMenu">
+    <button class="icon-btn" id="fileBtn" title="Exportar / Importar / Duplicar">🗂️ Archivo ▾</button>
+    <div class="menu-pop" id="fileMenuPop">
+      <button data-act="png">🖼️ Exportar PNG</button>
+      <button data-act="pdf">📄 Exportar PDF</button>
+      <div class="menu-sep"></div>
+      <button data-act="json">⬇️ Descargar JSON</button>
+      <button data-act="import">⬆️ Importar JSON</button>
+      <div class="menu-sep"></div>
+      <button data-act="dup">📑 Duplicar roadmap</button>
+    </div>
+    <input type="file" id="fileImport" accept="application/json,.json" hidden>
+  </div>
+  <button class="icon-btn" id="presentBtn" title="Presentación">▶ Presentar</button>
+  <button class="icon-btn" id="settingsBtn" title="Configuración">⚙️</button>
+</div>
+
+<!-- ===== FILTER + LEGEND ===== -->
+<div class="filterbar">
+  <span class="fl">Filtros</span>
+  <select id="filterCountry"><option value="">🌎 Todos los países</option></select>
+  <select id="filterBU"><option value="">🏢 Todas las BU</option></select>
+  <button class="icon-btn" id="addProjectBtn">＋ Proyecto</button>
+  <div class="legend" id="legend"></div>
+</div>
+
+<!-- ===== BOARD ===== -->
+<div class="board">
+  <div class="sidebar">
+    <div class="sidebar-head"><span class="sh-title">Proyectos / Iniciativas</span></div>
+    <div class="sidebar-clip"><div class="sidebar-rows" id="sidebarRows"></div></div>
+  </div>
+  <div class="timeline">
+    <div class="tl-head"><div class="tl-head-inner" id="tlHeadInner"></div></div>
+    <div class="tl-body" id="tlBody">
+      <div class="tl-content" id="tlContent">
+        <div class="today-line" id="todayLine"></div>
+        <div id="rowsHost"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="tip" id="tip"></div>
+
+<!-- ===== UNLOCK EDITING ===== -->
+<div class="modal-bg" id="unlockModal">
+  <div class="modal">
+    <h3>Desbloquear edición</h3>
+    <p>Ingresa la clave de este roadmap o la clave madre. Sin ella puedes seguir viéndolo normalmente.</p>
+    <div class="field"><label>Clave</label><input id="unlockPass" type="password" autocomplete="current-password"></div>
+    <div class="err" id="unlockErr"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="unlockCancel">Seguir viendo</button>
+      <button class="btn btn-ok" id="unlockSubmit">Desbloquear</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== PROPERTIES PANEL (bar) ===== -->
+<div class="panel" id="barPanel">
+  <div class="panel-head"><h3>Editar fase</h3><button class="mini" id="barPanelClose">✕</button></div>
+  <div class="panel-body">
+    <div class="field"><label>Nombre</label><input type="text" id="pfName"></div>
+    <div class="field"><label>Fase / Estado</label><select id="pfType"></select></div>
+    <div class="field"><label>Países (banderas)</label><div class="chips" id="pfCountries"></div></div>
+    <div class="field"><label>Unidades de negocio</label><div class="chips" id="pfBUs"></div></div>
+    <div class="field row2">
+      <div><label>Inicio</label><input type="date" id="pfStart"></div>
+      <div><label>Fin</label><input type="date" id="pfEnd"></div>
+    </div>
+  </div>
+  <div class="panel-actions">
+    <button class="btn btn-del" id="pfDelete">Eliminar</button>
+    <button class="btn btn-ok" id="pfDone">Listo</button>
+  </div>
+</div>
+
+<!-- ===== SETTINGS ===== -->
+<div class="overlay" id="overlay"></div>
+<div class="settings" id="settings">
+  <div class="settings-head"><h2>⚙️ Configuración</h2><button class="mini" id="settingsClose">✕</button></div>
+  <div class="tabs" id="settingsTabs">
+    <button data-tab="phases" class="active">Fases</button>
+    <button data-tab="countries">Países</button>
+    <button data-tab="bu">Unidades de negocio</button>
+    <button data-tab="states">Estados</button>
+    <button data-tab="general">General</button>
+    <button data-tab="access">Acceso</button>
+    <button data-tab="cloud">Nube</button>
+  </div>
+  <div class="settings-body">
+    <div class="tabpane active" id="tab-phases">
+      <p class="hint">Cada fase tiene un color. Las barras del roadmap se pintan según su fase. Agrega, edita o elimina sin tocar código.</p>
+      <div id="phasesList"></div>
+      <button class="add-row" id="addPhase">＋ Agregar fase</button>
+    </div>
+    <div class="tabpane" id="tab-countries">
+      <p class="hint">Países disponibles. Elige un icono (bandera redonda) para cada uno; se muestra en las barras. El emoji es el respaldo si no hay icono.</p>
+      <div id="countriesList"></div>
+      <button class="add-row" id="addCountry">＋ Agregar país</button>
+    </div>
+    <div class="tabpane" id="tab-bu">
+      <p class="hint">Unidades de negocio. Elige un icono para cada una; se muestra en las barras. Una fase puede tener varias unidades.</p>
+      <div id="buList"></div>
+      <button class="add-row" id="addBU">＋ Agregar unidad</button>
+    </div>
+    <div class="tabpane" id="tab-states">
+      <p class="hint">Estados generales de cada iniciativa (lo que aparece a la izquierda, ej. «En desarrollo»).</p>
+      <div id="statesList"></div>
+      <button class="add-row" id="addState">＋ Agregar estado</button>
+    </div>
+    <div class="tabpane" id="tab-general">
+      <div class="gen-grid">
+        <div class="full"><label>Título</label><input type="text" id="genTitle"></div>
+        <div class="full"><label>Subtítulo</label><input type="text" id="genSub"></div>
+        <div><label>Inicio del roadmap</label><input type="date" id="genStart"></div>
+        <div><label>Fin del roadmap</label><input type="date" id="genEnd"></div>
+        <div><label>Vista por defecto</label><select id="genView"><option value="year">Año</option><option value="cuatri">Cuatrimestre</option><option value="month">Mes</option><option value="week">Semana</option></select></div>
+        <div><label>Tema</label><select id="genTheme"><option value="light">Claro</option><option value="dark">Oscuro</option></select></div>
+        <div><label>Color de acento</label><input type="color" id="genAccent" style="height:40px;padding:3px"></div>
+        <div class="full"><label>Logo (URL, opcional)</label><input type="url" id="genLogo" placeholder="https://..."></div>
+        <div class="full"><button class="add-row" id="genReset" style="border-color:#F3C2C2;color:#D0322B">♻️ Restaurar datos de ejemplo (borra este roadmap)</button></div>
+      </div>
+    </div>
+    <div class="tabpane" id="tab-access">
+      <p class="hint">Define o cambia la clave necesaria para editar este roadmap. Quienes tengan solamente el enlace podrán verlo, pero no modificarlo.</p>
+      <div class="access-state" id="accessState"></div>
+      <div class="field"><label>Nueva clave</label><input type="password" id="settingsPass" autocomplete="new-password"></div>
+      <div class="field"><label>Repetir nueva clave</label><input type="password" id="settingsPass2" autocomplete="new-password"></div>
+      <div class="err" id="settingsPassErr"></div>
+      <button class="add-row" id="settingsPassSave">Guardar nueva clave</button>
+    </div>
+    <div class="tabpane" id="tab-cloud">
+      <div class="cloud-steps">
+        <div class="status-row">Estado: <span class="cloud-dot" id="cloudDot2"></span><span id="cloudStatusText">Local (este navegador)</span></div>
+        <p class="hint" id="cloudHelp">Este roadmap se guarda en la nube y se sincroniza en <b>tiempo real</b> con todo el equipo. No necesitas configurar nada: los cambios aparecen solos en el resto de los equipos.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== PRESENT ===== -->
+<div class="present" id="present">
+  <span class="pbadge" id="presentDate"></span>
+  <button class="exit" id="presentExit">⏏ Salir · Esc</button>
+</div>
+
+<!-- ===== FIRMA ===== -->
+<div class="sig"><b>Hecho por Juan Carlos Ferrer</b><br>Ideado por Violeta Echaurren</div>
+
+<script src="js/core.js"></script>
+<script src="js/roadmap.js"></script>
+</body>
+</html>

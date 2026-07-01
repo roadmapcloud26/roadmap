@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Prueba de integración · modo local</title>
+</head>
+<body>
+<pre id="result">Ejecutando…</pre>
+<iframe id="app" title="Aplicación bajo prueba" style="width:1280px;height:800px"></iframe>
+<iframe id="peer" title="Segunda pestaña bajo prueba" style="width:1280px;height:800px"></iframe>
+
+<script src="../js/core.js"></script>
+<script>
+(async function(){
+  const result=document.getElementById('result');
+  const frame=document.getElementById('app');
+  const peer=document.getElementById('peer');
+  const testName='Prueba local Codex '+Date.now();
+  const updatedName=testName+' actualizada';
+  let createdId='';
+
+  function assert(value,message){
+    if(!value) throw new Error(message);
+  }
+  function loadInto(target,path){
+    return new Promise(resolve=>{
+      target.addEventListener('load',resolve,{once:true});
+      target.src=path;
+    });
+  }
+  function load(path){ return loadInto(frame,path); }
+  function nextLoad(){
+    return new Promise(resolve=>frame.addEventListener('load',resolve,{once:true}));
+  }
+  async function waitFor(check,message){
+    const limit=Date.now()+1500;
+    while(Date.now()<limit){
+      if(check()) return;
+      await new Promise(resolve=>setTimeout(resolve,25));
+    }
+    throw new Error(message);
+  }
+
+  try{
+    assert(STORAGE_MODE==='local','STORAGE_MODE debe estar en local');
+    const generated=new Set(Array.from({length:512},()=>randomId()));
+    assert(generated.size===512,'randomId produjo ids repetidos');
+    assert([...generated].every(id=>/^[A-Za-z0-9]{20}$/.test(id)),'Los ids no tienen el formato aleatorio esperado');
+
+    await load('../index.html');
+
+    let doc=frame.contentDocument;
+    assert(doc.querySelector('#homeStatus.local'),'El Home no informa el modo local');
+    assert(doc.querySelector('#newCard'),'No aparece la tarjeta Nuevo roadmap');
+
+    doc.querySelector('#newCard').click();
+    doc.querySelector('#nrName').value=testName;
+    doc.querySelector('#nrPass').value='clave-prueba';
+    doc.querySelector('#nrPass2').value='clave-prueba';
+    const opened=nextLoad();
+    doc.querySelector('#nrCreate').click();
+    await opened;
+
+    doc=frame.contentDocument;
+    assert(doc.querySelector('#brTitle').textContent===testName,'El roadmap creado no conserva su nombre');
+    assert(doc.querySelectorAll('.bar').length===15,'El editor no renderizó las 15 fases iniciales');
+    assert(doc.querySelector('#cloudDot.local'),'El editor no informa el modo local');
+    assert(doc.body.classList.contains('edit-mode'),'El creador no entró con edición desbloqueada');
+
+    const meta=readLocalMeta();
+    createdId=Object.keys(meta).find(id=>meta[id].name===testName)||'';
+    assert(createdId,'El roadmap no quedó registrado en el índice local');
+
+    await loadInto(peer,'../roadmap.html?id='+encodeURIComponent(createdId));
+    assert(peer.contentDocument.querySelector('#brTitle').textContent===testName,'La segunda pestaña no abrió el mismo roadmap');
+
+    const title=doc.querySelector('#brTitle');
+    title.textContent=updatedName;
+    title.dispatchEvent(new Event('blur'));
+    assert(readLocalMeta()[createdId].name===updatedName,'La edición no actualizó el índice local');
+    await waitFor(
+      ()=>peer.contentDocument.querySelector('#brTitle').textContent===updatedName,
+      'La edición no se sincronizó con la segunda pestaña'
+    );
+
+    await load('../index.html');
+    doc=frame.contentDocument;
+    const names=[...doc.querySelectorAll('.card h3')].map(el=>el.textContent);
+    assert(names.includes(updatedName),'El Home no volvió a listar el roadmap editado');
+
+    const openButton=doc.querySelector('[data-edit="'+createdId+'"]');
+    assert(openButton,'El roadmap listado no tiene acción Editar');
+    const reopened=nextLoad();
+    openButton.click();
+    await reopened;
+    assert(frame.contentDocument.querySelector('#brTitle').textContent===updatedName,'Abrir desde la tarjeta llevó al roadmap incorrecto');
+
+    await load('../index.html');
+    doc=frame.contentDocument;
+    doc.defaultView.confirm=()=>true;
+    const deleteButton=doc.querySelector('[data-del="'+createdId+'"]');
+    assert(deleteButton,'El roadmap listado no tiene acción Eliminar');
+    deleteButton.click();
+    await waitFor(
+      ()=>!frame.contentDocument.querySelector('[data-edit="'+createdId+'"]'),
+      'Eliminar no retiró la tarjeta del Home'
+    );
+    assert(!localStorage.getItem(localDocKey(createdId)),'Eliminar no borró el documento local');
+    createdId='';
+
+    result.textContent='PASS: ids, crear, listar, abrir, editar, sincronizar y eliminar funcionan en modo local';
+  }catch(error){
+    result.textContent='FAIL: '+error.stack;
+    document.body.dataset.failed='1';
+  }finally{
+    if(createdId) deleteLocalRoadmapDoc(createdId,'integration-test');
+  }
+})();
+</script>
+</body>
+</html>
